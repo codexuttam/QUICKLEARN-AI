@@ -8,8 +8,13 @@
 
 }
 
-body {
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    font-family: var(--font-bricolage), Arial, Helvetica, sans-serif;
+  }
 }
 
 @layer base {

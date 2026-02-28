@@ -1,15 +1,16 @@
 "use client";
 
-import { Children, useState } from "react";
-import { SendHorizontal, Loader2, BookOpen, Youtube, Sparkles, ChevronDown, ChevronUp, Check, X } from "lucide-react";
+import Link from "next/link";
+import { useState, useEffect } from "react";
+import { SendHorizontal, Loader2, BookOpen, Youtube, Sparkles, ChevronDown, ChevronUp, Check, X, ShieldAlert, Lock, LogOut } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
 import axios, { AxiosError } from "axios";
-import { getTeachingPrompt, TeachingStyle } from '@/components/GeminiResponse/SystemPrompt';
+import { getTeachingPrompt, getCombinedPrompt, TeachingStyle } from '@/components/GeminiResponse/SystemPrompt';
 import { Skeleton } from "@/components/ui/skeleton";
-import { GeminiResponse } from "./interfaces/types";
-import { YoutubeAnalyticsResponse } from "./interfaces/types";
-import { YoutubeVideoResponse } from "./interfaces/types";
-import { YoutubeVideoItem } from "./interfaces/types";
-import { YoutubeAnalytics } from "./interfaces/types";
+import { GeminiResponse, YoutubeVideoResponse, YoutubeVideoItem, YoutubeAnalyticsResponse, YoutubeAnalytics } from "./interfaces/types";
+import { Features, Footer } from "./LandingSections";
+import Typewriter from 'typewriter-effect';
+import { motion } from "framer-motion";
 
 export const IntegratedGeminiChat = () => {
   const [inputData, setInputData] = useState("");
@@ -25,6 +26,16 @@ export const IntegratedGeminiChat = () => {
   const [userAnswers, setUserAnswers] = useState<Record<number, string>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [quizReady, setQuizReady] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [showLoginError, setShowLoginError] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    // Rough check for login status
+    const status = localStorage.getItem("isLoggedIn") === "true";
+    setIsLoggedIn(status);
+  }, []);
 
   interface QuizQuestion {
     question: string;
@@ -33,8 +44,7 @@ export const IntegratedGeminiChat = () => {
     explanation?: string;
   }
 
-  const api_key = process.env.NEXT_PUBLIC_API_KEY; 
-  const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${api_key}`;
+  const GEMINI_API_URL = `/api/gemini`;
   const youtube_api_key = process.env.NEXT_PUBLIC_YOUTUBE_API_KEY;
   const Youtube_Base_url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&key=${youtube_api_key}`;
   const youtube_analytics_url = `https://www.googleapis.com/youtube/v3/videos?part=statistics&key=${youtube_api_key}`;
@@ -45,7 +55,7 @@ export const IntegratedGeminiChat = () => {
     { value: TeachingStyle.Interactive, label: "Interactive", description: "Engaging, question-based teaching" },
     { value: TeachingStyle.Advanced, label: "Advanced", description: "Deep, technical explanations" },
     { value: TeachingStyle.Storytelling, label: "Storytelling", description: "Narrative-based learning" },
-    { value: TeachingStyle.Deepanalysis, label: "Deep Analysis", description: "Comprehensive breakdowns" }   
+    { value: TeachingStyle.Deepanalysis, label: "Deep Analysis", description: "Comprehensive breakdowns" }
   ];
 
   const generateQuizPrompt = (topic: string) => {
@@ -68,38 +78,29 @@ export const IntegratedGeminiChat = () => {
     questionBlocks.forEach(block => {
       const lines = block.split('\n');
       const question = lines[0].replace('Question: ', '').trim();
-      
       const optionsLine = lines.find(line => line.startsWith('Options: '));
-      const options = optionsLine 
-        ? optionsLine.replace('Options: ', '').split(', ').map(opt => opt.trim())
-        : [];
-      
+      const options = optionsLine ? optionsLine.replace('Options: ', '').split(', ').map(opt => opt.trim()) : [];
       const correctAnswerLine = lines.find(line => line.startsWith('Correct Answer: '));
-      const correctAnswer = correctAnswerLine 
-        ? correctAnswerLine.replace('Correct Answer: ', '').trim()
-        : '';
-      
+      const correctAnswer = correctAnswerLine ? correctAnswerLine.replace('Correct Answer: ', '').trim() : '';
       const explanationLine = lines.find(line => line.startsWith('Explanation: '));
-      const explanation = explanationLine 
-        ? explanationLine.replace('Explanation: ', '').trim()
-        : '';
+      const explanation = explanationLine ? explanationLine.replace('Explanation: ', '').trim() : '';
 
       if (question && options.length > 0 && correctAnswer) {
-        questions.push({
-          question,
-          options,
-          correctAnswer,
-          explanation
-        });
+        questions.push({ question, options, correctAnswer, explanation });
       }
     });
 
-    return questions.slice(0, 3); 
+    return questions.slice(0, 3);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputData.trim()) return;
+
+    if (!isLoggedIn) {
+      setShowLoginError(true);
+      return;
+    }
 
     setIsLoading(true);
     setIsFetchingVideos(true);
@@ -114,52 +115,55 @@ export const IntegratedGeminiChat = () => {
     setQuizReady(false);
 
     try {
+      // 1. Fetch AI Explanation & Quiz
       const geminiResponse = await axios.post(GEMINI_API_URL, {
-        contents: [{
-          parts: [{
-            text: getTeachingPrompt(inputData, teachingStyle)
-          }]
-        }]
+        contents: [{ parts: [{ text: getCombinedPrompt(inputData, teachingStyle) }] }]
       });
 
       const geminiData = geminiResponse.data as GeminiResponse;
-      if (geminiData.candidates?.[0]?.content?.parts?.[0]?.text) {
-        setResponse(geminiData.candidates[0].content.parts[0].text);
+      const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (responseText) {
+        try {
+          const cleanedJson = responseText.replace(/```json|```/g, '').trim();
+          const parsed = JSON.parse(cleanedJson);
+          setResponse(parsed.explanation);
+          setQuizQuestions(parsed.quiz);
+          setQuizReady(true);
+        } catch (e) {
+          setResponse(responseText);
+        }
         setAnimateResponse(true);
       }
-
-      const quizResponse = await axios.post(GEMINI_API_URL, {
-        contents: [{
-          parts: [{
-            text: generateQuizPrompt(inputData)
-          }]
-        }]
-      });
-
-      const quizData = quizResponse.data as GeminiResponse;
-      if (quizData.candidates?.[0]?.content?.parts?.[0]?.text) {
-        const parsedQuestions = parseQuizResponse(quizData.candidates[0].content.parts[0].text);
-        setQuizQuestions(parsedQuestions);
-        setQuizReady(true);
+    } catch (error) {
+      console.error("Gemini Error:", error);
+      if (axios.isAxiosError(error) && error.response?.status === 429) {
+        setResponse("Gemini AI is reaching its request limit. Please try again in 30 seconds.");
+      } else {
+        setResponse("The AI couldn't generate a breakdown. Please check your Gemini API key.");
       }
+    }
 
+    try {
+      // 2. Fetch YouTube Videos
       const youtubeResponse = await axios.get(`${Youtube_Base_url}&q=${encodeURIComponent(inputData)}&maxResults=4`);
       const youtubeData = youtubeResponse.data as YoutubeVideoResponse;
       setVideos(youtubeData.items);
 
-      const videoIds = youtubeData.items.map(video => video.id.videoId).join(',');
-      const statsResponse = await axios.get(`${youtube_analytics_url}&id=${videoIds}`);
-      const statsData = statsResponse.data as YoutubeAnalyticsResponse;
-      
-      const statsMap: Record<string, YoutubeAnalytics['statistics']> = {};
-      statsData.items.forEach(item => {
-        statsMap[item.id] = item.statistics;
-      });
-      setVideoStats(statsMap);
-    } catch (error) {
-      if (error instanceof AxiosError) {
-        setResponse(`Error: ${error.message}`);
+      if (youtubeData.items.length > 0) {
+        const videoIds = youtubeData.items.map(video => video.id.videoId).join(',');
+        const statsResponse = await axios.get(`${youtube_analytics_url}&id=${videoIds}`);
+        const statsData = statsResponse.data as YoutubeAnalyticsResponse;
+
+        const statsMap: Record<string, YoutubeAnalytics['statistics']> = {};
+        statsData.items.forEach(item => {
+          statsMap[item.id] = item.statistics;
+        });
+        setVideoStats(statsMap);
       }
+    } catch (error) {
+      console.error("YouTube Error:", error);
+      // We don't block the main response if YouTube fails
     } finally {
       setIsLoading(false);
       setIsFetchingVideos(false);
@@ -167,415 +171,389 @@ export const IntegratedGeminiChat = () => {
   };
 
   const handleAnswerSelect = (questionIndex: number, answer: string) => {
-    setUserAnswers(prev => ({
-      ...prev,
-      [questionIndex]: answer
-    }));
+    setUserAnswers(prev => ({ ...prev, [questionIndex]: answer }));
   };
 
-  const submitQuiz = () => {
-    setQuizSubmitted(true);
+  const submitQuiz = () => setQuizSubmitted(true);
+  const resetQuiz = () => { setUserAnswers({}); setQuizSubmitted(false); };
+  const calculateScore = () => quizQuestions.reduce((score, question, index) => score + (userAnswers[index] === question.correctAnswer ? 1 : 0), 0);
+
+  const abbreviateNumber = (num: number): string => {
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+    return num.toString();
   };
 
-  const resetQuiz = () => {
-    setUserAnswers({});
-    setQuizSubmitted(false);
-  };
-
-  const calculateScore = () => {
-    return quizQuestions.reduce((score, question, index) => {
-      return score + (userAnswers[index] === question.correctAnswer ? 1 : 0);
-    }, 0);
-  };
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-[#020617] flex items-center justify-center">
+        <Loader2 className="h-10 w-10 text-purple-600 animate-spin" />
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen flex flex-col bg-black relative">
-      <div className="absolute inset-0 [background-image:linear-gradient(to_right,rgba(255,255,255,0.1)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.1)_1px,transparent_1px)] bg-[length:40px_40px]"></div>
+    <div className="min-h-screen flex flex-col bg-slate-950 relative selection:bg-purple-500/30 overflow-x-hidden">
+      {/* Dynamic Advanced Background */}
+      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
+        <div className="absolute inset-0 bg-[#020617]"></div>
+        <div
+          className="absolute top-0 left-1/4 w-[1000px] h-[600px] bg-purple-600/10 blur-[120px] rounded-full animate-pulse transition-opacity"
+          style={{ transitionDuration: '7001ms' }}
+        ></div>
+        <div
+          className="absolute bottom-0 right-1/4 w-[1000px] h-[600px] bg-blue-600/10 blur-[120px] rounded-full animate-pulse transition-opacity"
+          style={{ transitionDuration: '10001ms' }}
+        ></div>
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[length:24px_24px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]"></div>
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-slate-950/50 to-slate-950"></div>
+      </div>
 
-      <nav>
-        <div className="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center">
-          <div className="flex items-center space-x-2">
-            <Sparkles className="h-6 w-6 text-purple-400" />
-            <h1 className="text-2xl font-bold">
-              <span className="bg-gradient-to-r from-purple-400 via-pink-500 to-blue-500 bg-clip-text text-transparent">
-                QuickLearn.ai
-              </span>
+      <nav className="sticky top-0 z-50 bg-black/50 backdrop-blur-xl border-b border-white/5">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
+          <Link href="/" className="flex items-center space-x-2 group">
+            <Sparkles className="h-6 w-6 text-purple-400 group-hover:rotate-12 transition-transform duration-300" />
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-blue-500 bg-clip-text text-transparent group-hover:opacity-80 transition-opacity">
+              QuickLearn.ai
             </h1>
-          </div>
-          <div className="flex items-center space-x-4">
-            <a href="#" className="text-gray-400 hover:text-white text-sm transition">Features</a>
-            <a href="#" className="text-gray-400 hover:text-white text-sm transition">About</a>
-            <button className="bg-purple-600 hover:bg-purple-700 text-white text-sm px-3 py-1.5 rounded-md transition">Sign In</button>
+          </Link>
+          <div className="flex items-center space-x-6">
+            <a href="#features" className="text-gray-400 hover:text-white text-sm transition-all hover:scale-105">Features</a>
+            <a href="#about" className="text-gray-400 hover:text-white text-sm transition-all hover:scale-105">About</a>
+            <div className="h-4 w-px bg-white/10"></div>
+            {!isLoggedIn ? (
+              <>
+                <Link href="/login" className="text-gray-400 hover:text-white text-sm font-medium transition-colors">Sign In</Link>
+                <Link href="/signup" className="bg-white text-black text-sm px-5 py-2.5 rounded-full hover:bg-gray-200 transition-all font-bold shadow-[0_0_20px_rgba(255,255,255,0.1)]">Sign Up</Link>
+              </>
+            ) : (
+              <button
+                onClick={() => {
+                  localStorage.clear();
+                  setIsLoggedIn(false);
+                  window.location.href = "/";
+                }}
+                className="text-gray-400 hover:text-white text-sm font-medium transition-all hover:scale-105 flex items-center gap-2 bg-white/5 px-4 py-2.5 rounded-full hover:bg-white/10 border border-white/5 active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.02)]"
+              >
+                <LogOut size={16} />
+                Logout
+              </button>
+            )}
           </div>
         </div>
       </nav>
 
-      <main className="flex-grow flex flex-col items-center px-4 pb-12 pt-8">
+      {/* Elements above have fixed background, now content */}
+
+      <main className="flex-grow flex flex-col items-center px-4 pb-12 pt-8 relative z-10">
         <div className="w-full max-w-4xl mx-auto">
           <section className="text-center mb-10 animate-fade-in">
-            <h2 className="text-3xl md:text-4xl font-bold text-white mb-3">
-              Learn Anything with AI
-            </h2>
-            <p className="text-gray-300 max-w-2xl mx-auto">
-              Get instant explanations powered by AI and curated video recommendations
-            </p>
-            <div className="mt-6 flex flex-wrap justify-center gap-3">
-              <div className="flex items-center px-3 py-1.5 bg-indigo-900/40 rounded-full border border-indigo-800/30">
-                <div className="w-2 h-2 rounded-full bg-indigo-400 mr-2"></div>
-                <span className="text-indigo-300 text-xs">Deep Learning</span>
-              </div>
-              <div className="flex items-center px-3 py-1.5 bg-purple-900/40 rounded-full border border-purple-800/30">
-                <div className="w-2 h-2 rounded-full bg-purple-400 mr-2"></div>
-                <span className="text-purple-300 text-xs">History</span>
-              </div>
-              <div className="flex items-center px-3 py-1.5 bg-pink-900/40 rounded-full border border-pink-800/30">
-                <div className="w-2 h-2 rounded-full bg-pink-400 mr-2"></div>
-                <span className="text-pink-300 text-xs">Mathematics</span>
-              </div>
-              <div className="flex items-center px-3 py-1.5 bg-blue-900/40 rounded-full border border-blue-800/30">
-                <div className="w-2 h-2 rounded-full bg-blue-400 mr-2"></div>
-                <span className="text-blue-300 text-xs">Physics</span>
-              </div>
-              <div className="flex items-center px-3 py-1.5 bg-green-900/40 rounded-full border border-green-800/30">
-                <div className="w-2 h-2 rounded-full bg-green-400 mr-2"></div>
-                <span className="text-green-300 text-xs">Biology</span>
-              </div>
+            <h2 className="text-3xl md:text-4xl font-bold text-white mb-3">Learn Anything with AI</h2>
+            <div className="text-gray-100 max-w-2xl mx-auto h-8 text-lg font-medium opacity-80 mb-2">
+              {mounted && (
+                <Typewriter
+                  options={{
+                    strings: [
+                      'Get instant explanations powered by AI.',
+                      'Explore curated video recommendations.',
+                      'Master any subject in minutes.',
+                      'Tailored to your learning style.'
+                    ],
+                    autoStart: true,
+                    loop: true,
+                    delay: 50,
+                    deleteSpeed: 30,
+                  }}
+                />
+              )}
             </div>
           </section>
 
           <section className="mb-10">
-            <div className="bg-slate-800/50 backdrop-blur-md rounded-2xl shadow-xl border border-purple-900/30 p-6">
-              <form onSubmit={handleSubmit} className="w-full">
-                <div className="mb-5">
-                  <label
-                    htmlFor="teaching-style"
-                    className="block text-sm font-medium text-gray-300 mb-2 flex items-center"
-                  >
-                    <BookOpen className="h-4 w-4 mr-2 text-purple-400" />
-                    Choose Your Learning Style
-                  </label>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                    {teachingStyleOptions.map((option) => (
-                      <div 
-                        key={option.value}
-                        className={`cursor-pointer rounded-lg border p-3 transition-all ${
-                          teachingStyle === option.value 
-                            ? 'bg-purple-900/50 border-purple-500' 
-                            : 'bg-gray-800/30 border-gray-700 hover:border-gray-600'
-                        }`}
-                        onClick={() => setTeachingStyle(option.value)}
-                      >
-                        <div className="font-medium text-sm text-white mb-1">{option.label}</div>
-                        <div className="text-xs text-gray-400">{option.description}</div>
-                      </div>
-                    ))}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-slate-900/40 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/10 p-1"
+            >
+              <div className="bg-slate-900/60 rounded-[1.4rem] p-6 lg:p-8">
+                <form onSubmit={handleSubmit} className="w-full">
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-gray-400 mb-3 flex items-center">
+                      <BookOpen className="h-4 w-4 mr-2 text-purple-400" /> Choose Your Learning Style
+                    </label>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                      {teachingStyleOptions.map((option) => (
+                        <div
+                          key={option.value}
+                          className={`cursor-pointer rounded-xl border p-3 transition-all ${teachingStyle === option.value
+                            ? 'bg-purple-900/50 border-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.2)]'
+                            : 'bg-gray-800/20 border-white/5 hover:border-white/20'
+                            }`}
+                          onClick={() => setTeachingStyle(option.value)}
+                        >
+                          <div className="font-semibold text-sm text-white mb-1">{option.label}</div>
+                          <div className="text-[10px] text-gray-400 leading-tight">{option.description}</div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                <div className="relative rounded-xl shadow-lg overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 via-blue-500/20 to-pink-500/20"></div>
-                  <div className="relative flex items-center bg-slate-800/90 rounded-lg overflow-hidden">
-                    <input
-                      type="text"
-                      className="flex-1 h-16 px-6 py-2 bg-transparent text-white text-lg placeholder-gray-500 outline-none border-0"
-                      placeholder="What would you like to learn about?"
-                      onChange={(e) => setInputData(e.target.value)}
-                      value={inputData}
-                      disabled={isLoading}
-                    />
-                    <button
-                      type="submit"
-                      disabled={isLoading || !inputData.trim()}
-                      className="h-16 px-8 bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 font-medium"
-                    >
-                      {isLoading ? (
-                        <><Loader2 className="h-5 w-5 animate-spin" /> Processing</>
-                      ) : (
-                        <><SendHorizontal size={18} /> Ask</>
-                      )}
-                    </button>
+                  <div className="relative group">
+                    <div className="absolute -inset-1 bg-gradient-to-r from-purple-600 to-blue-600 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-1000"></div>
+                    <div className="relative flex items-center bg-slate-950 rounded-xl overflow-hidden border border-white/5">
+                      <input
+                        type="text"
+                        className="flex-1 h-16 px-6 py-2 bg-transparent text-white text-lg placeholder-gray-600 outline-none border-0"
+                        placeholder="What would you like to learn about?"
+                        onChange={(e) => setInputData(e.target.value)}
+                        value={inputData}
+                        disabled={isLoading}
+                      />
+                      <button
+                        type="submit"
+                        disabled={isLoading || !inputData.trim()}
+                        className="h-16 px-8 bg-white text-black hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 font-bold"
+                      >
+                        {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <SendHorizontal size={18} />}
+                        {isLoading ? "Thinking..." : "Deep Search"}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              </form>
-            </div>
+                </form>
+              </div>
+            </motion.div>
           </section>
 
           <section className="w-full">
             {isLoading ? (
-              <div className="bg-slate-800/40 backdrop-blur-sm rounded-2xl p-8 border border-slate-700/30 shadow-lg animate-pulse">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 rounded-full bg-slate-700"></div>
-                  <div>
-                    <div className="h-5 w-32 bg-slate-700 rounded"></div>
-                    <div className="h-3 w-24 bg-slate-700 rounded mt-2"></div>
+              <div className="bg-slate-900/40 backdrop-blur-xl rounded-3xl p-8 border border-white/10 shadow-2xl animate-pulse">
+                <div className="flex items-center gap-3 mb-8">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-800"></div>
+                  <div className="space-y-2">
+                    <div className="h-5 w-40 bg-slate-800 rounded-lg"></div>
+                    <div className="h-3 w-24 bg-slate-800 rounded-lg"></div>
                   </div>
                 </div>
-                <div className="space-y-3">
-                  <div className="h-4 bg-slate-700 rounded w-full"></div>
-                  <div className="h-4 bg-slate-700 rounded w-full"></div>
-                  <div className="h-4 bg-slate-700 rounded w-5/6"></div>
-                  <div className="h-4 bg-slate-700 rounded w-3/4"></div>
+                <div className="space-y-4">
+                  <div className="h-4 bg-slate-800 rounded-lg w-full"></div>
+                  <div className="h-4 bg-slate-800 rounded-lg w-[95%]"></div>
+                  <div className="h-4 bg-slate-800 rounded-lg w-[98%]"></div>
                 </div>
               </div>
             ) : (
               (response || videos.length > 0) && (
-                <div className={`bg-slate-800/40 backdrop-blur-sm rounded-2xl p-8 border border-slate-700/30 shadow-lg ${animateResponse ? 'animate-fade-in' : ''}`}>
-                  {response && (
-                    <>
-                      <div className="flex items-center gap-3 mb-6">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
-                          <Sparkles className="h-5 w-5 text-white" />
+                <div className={`relative group ${animateResponse ? 'animate-fade-in' : ''}`}>
+                  <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-500/20 to-blue-500/20 rounded-3xl blur-xl opacity-50 pointer-events-none"></div>
+                  <div className="relative bg-slate-950/60 backdrop-blur-2xl rounded-3xl p-8 lg:p-10 border border-white/10 shadow-2xl">
+                    {response && (
+                      <>
+                        <div className="flex items-center gap-4 mb-8">
+                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-blue-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
+                            <Sparkles className="h-6 w-6 text-white" />
+                          </div>
+                          <div>
+                            <h3 className="text-2xl font-bold text-white tracking-tight">AI Master Breakdown</h3>
+                            <p className="text-sm text-gray-500 font-medium">Personalized Intelligence</p>
+                          </div>
                         </div>
-                        <div>
-                          <h3 className="text-xl font-semibold text-white">AI Explanation</h3>
-                          <p className="text-sm text-gray-400">Tailored to your learning style</p>
+                        <div className="text-gray-300 leading-relaxed space-y-5 font-light text-lg">
+                          {response.split("\n\n").map((paragraph, index) => (
+                            <p key={index}>{paragraph}</p>
+                          ))}
                         </div>
-                      </div>
-                      <div className="text-gray-200 leading-relaxed space-y-4 font-light">
-                        {response.split("\n\n").map((paragraph: string, index: number) => (
-                          <p key={index}>{paragraph}</p>
-                        ))}
-                      </div>
 
-                      {quizReady && (
-                        <div className="mt-10 pt-6 border-t border-slate-700/50">
-                          <div className="flex items-center justify-between">
+                        {quizReady && (
+                          <div className="mt-12 pt-8 border-t border-white/5">
                             <button
                               onClick={() => setShowQuiz(!showQuiz)}
-                              className="flex items-center gap-2 text-purple-400 hover:text-purple-300 transition-colors"
+                              className="flex items-center justify-between w-full p-4 bg-white/5 hover:bg-white/10 rounded-2xl transition-all group"
                             >
-                              <span className="font-medium">Test Your Understanding</span>
-                              {showQuiz ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                                  <BookOpen size={16} className="text-purple-400" />
+                                </div>
+                                <span className="text-white font-semibold">Test Your Mastery</span>
+                              </div>
+                              <div className="flex items-center gap-3 text-gray-400">
+                                <span className="text-xs">{quizQuestions.length} AI-GEN Questions</span>
+                                {showQuiz ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                              </div>
                             </button>
-                            <div className="bg-purple-500/20 py-1 px-3 rounded-full text-purple-300 text-xs font-medium">
-                              {quizQuestions.length} Questions
-                            </div>
-                          </div>
 
-                          {showQuiz && (
-                            <div className="bg-slate-800/50 rounded-xl p-6 mt-4">
-                              <h4 className="text-lg font-semibold text-white mb-4">
-                                Quick Quiz
-                              </h4>
-
-                              <div className="space-y-6">
+                            {showQuiz && (
+                              <div className="mt-6 space-y-6">
                                 {quizQuestions.map((question, qIndex) => (
-                                  <div key={qIndex} className="bg-slate-800/70 rounded-lg p-4">
-                                    <h5 className="text-white font-medium mb-3">{question.question}</h5>
-                                    <div className="space-y-2">
+                                  <div key={qIndex} className="bg-slate-900/50 rounded-2xl p-6 border border-white/5">
+                                    <h5 className="text-white font-bold mb-4 text-lg">{question.question}</h5>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                       {question.options.map((option, oIndex) => {
                                         const isSelected = userAnswers[qIndex] === option;
                                         const isCorrect = option === question.correctAnswer;
-                                        const showCorrectness = quizSubmitted && isCorrect;
-                                        const showIncorrectness = quizSubmitted && isSelected && !isCorrect;
+                                        const showResult = quizSubmitted;
 
                                         return (
-                                          <div 
+                                          <div
                                             key={oIndex}
                                             onClick={() => !quizSubmitted && handleAnswerSelect(qIndex, option)}
-                                            className={`p-3 rounded-lg cursor-pointer border transition-all ${
-                                              !quizSubmitted 
-                                                ? isSelected
-                                                  ? 'bg-purple-900/30 border-purple-500' 
-                                                  : 'border-slate-600 hover:border-purple-500 hover:bg-slate-700/50'
-                                                : isCorrect 
-                                                  ? 'border-green-500 bg-green-900/20'
-                                                  : isSelected && !isCorrect
-                                                    ? 'border-red-500 bg-red-900/20'
-                                                    : 'border-slate-600'
-                                            }`}
+                                            className={`p-4 rounded-xl cursor-pointer border-2 transition-all ${!showResult
+                                              ? isSelected
+                                                ? 'bg-purple-500/10 border-purple-500 text-white'
+                                                : 'bg-white/5 border-transparent hover:border-white/10 text-gray-400'
+                                              : isCorrect
+                                                ? 'bg-green-500/10 border-green-500 text-green-400 font-bold'
+                                                : isSelected
+                                                  ? 'bg-red-500/10 border-red-500 text-red-400'
+                                                  : 'bg-white/5 border-transparent opacity-50'
+                                              }`}
                                           >
                                             <div className="flex items-center gap-3">
-                                              {quizSubmitted && (
-                                                <div className="flex-shrink-0">
-                                                  {showCorrectness && (
-                                                    <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center">
-                                                      <Check size={14} className="text-white" />
-                                                    </div>
-                                                  )}
-                                                  {showIncorrectness && (
-                                                    <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center">
-                                                      <X size={14} className="text-white" />
-                                                    </div>
-                                                  )}
-                                                </div>
-                                              )}
-                                              <span className="text-gray-200">{option}</span>
+                                              {showResult && (isCorrect ? <Check size={16} /> : isSelected ? <X size={16} /> : null)}
+                                              {option}
                                             </div>
                                           </div>
                                         );
                                       })}
                                     </div>
-
-                                    {quizSubmitted && (
-                                      <div className="mt-3 text-sm text-gray-400">
-                                        <p>{question.explanation}</p>
+                                    {quizSubmitted && question.explanation && (
+                                      <div className="mt-4 p-4 bg-white/5 rounded-xl text-sm text-gray-400 leading-relaxed border-l-4 border-purple-500">
+                                        {question.explanation}
                                       </div>
                                     )}
                                   </div>
                                 ))}
-                              </div>
-
-                              <div className="mt-6 flex items-center justify-between">
-                                {!quizSubmitted ? (
-                                  <button
-                                    onClick={submitQuiz}
-                                    disabled={Object.keys(userAnswers).length < quizQuestions.length}
-                                    className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
-                                  >
-                                    Submit Answers
-                                  </button>
-                                ) : (
-                                  <>
-                                    <div className="text-white font-medium">
-                                      Your Score: <span className="text-purple-400">{calculateScore()}</span> out of {quizQuestions.length}
-                                    </div>
+                                <div className="flex justify-between items-center bg-white/5 p-6 rounded-2xl">
+                                  {!quizSubmitted ? (
                                     <button
-                                      onClick={resetQuiz}
-                                      className="text-purple-400 hover:text-purple-300 flex items-center gap-1"
+                                      onClick={submitQuiz}
+                                      disabled={Object.keys(userAnswers).length < quizQuestions.length}
+                                      className="bg-white text-black font-bold px-8 py-3 rounded-xl disabled:opacity-20 transition-all hover:scale-105"
                                     >
-                                      Try again
+                                      Finalize Results
                                     </button>
-                                  </>
-                                )}
+                                  ) : (
+                                    <>
+                                      <div className="text-white">
+                                        Mastery Level: <span className="text-purple-400 font-bold">{calculateScore()} / {quizQuestions.length}</span>
+                                      </div>
+                                      <button onClick={resetQuiz} className="text-gray-400 hover:text-white transition-colors underline decoration-purple-500 underline-offset-4">Try Re-Mastering</button>
+                                    </>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  )}
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
 
-                  {videos.length > 0 && (
-                    <div className="mt-10 pt-6 border-t border-slate-700/50">
-                      <div className="flex items-center gap-3 mb-6">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-amber-500 flex items-center justify-center">
-                          <Youtube className="h-5 w-5 text-white" />
+                    {videos.length > 0 && (
+                      <div className="mt-12 pt-8 border-t border-white/5">
+                        <div className="flex items-center gap-4 mb-8">
+                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-red-500 to-amber-600 flex items-center justify-center shadow-lg shadow-red-500/20">
+                            <Youtube className="h-6 w-6 text-white" />
+                          </div>
+                          <div>
+                            <h3 className="text-2xl font-bold text-white tracking-tight">Visual Deep Dives</h3>
+                            <p className="text-sm text-gray-500 font-medium">Curated Cinematic Learning</p>
+                          </div>
                         </div>
-                        <div>
-                          <h3 className="text-xl font-semibold text-white">Recommended Videos</h3>
-                          <p className="text-sm text-gray-400">Curated content to deepen your knowledge</p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          {videos.map((video) => (
+                            <a
+                              key={video.id.videoId}
+                              href={`https://www.youtube.com/watch?v=${video.id.videoId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="group bg-white/5 hover:bg-white/10 rounded-2xl overflow-hidden transition-all border border-white/5 hover:border-white/10 hover:-translate-y-1"
+                            >
+                              <div className="relative aspect-video">
+                                <img
+                                  src={video.snippet.thumbnails.high?.url || video.snippet.thumbnails.default.url}
+                                  alt={video.snippet.title}
+                                  className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                                />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-4">
+                                  <h4 className="text-white font-bold text-sm line-clamp-2 leading-snug">{video.snippet.title}</h4>
+                                </div>
+                              </div>
+                              <div className="p-4 flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                                <div className="flex items-center gap-4">
+                                  {videoStats[video.id.videoId] && (
+                                    <>
+                                      <span className="flex items-center gap-1.5"><X className="w-3 h-3 rotate-45" /> {abbreviateNumber(parseInt(videoStats[video.id.videoId].viewCount))}</span>
+                                      <span className="flex items-center gap-1.5"><Sparkles className="w-3 h-3" /> {abbreviateNumber(parseInt(videoStats[video.id.videoId].likeCount))}</span>
+                                    </>
+                                  )}
+                                </div>
+                                <span className="bg-white/5 px-2 py-1 rounded">
+                                  {mounted && new Date(video.snippet.publishedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short' })}
+                                </span>
+                              </div>
+                            </a>
+                          ))}
                         </div>
                       </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {videos.map((video) => (
-                          <a 
-                            key={video.id.videoId}
-                            href={`https://www.youtube.com/watch?v=${video.id.videoId}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="bg-slate-800/80 hover:bg-slate-800 border border-slate-700/50 rounded-lg overflow-hidden transition-all hover:shadow-lg hover:shadow-purple-900/20 hover:scale-[1.02]"
-                          >
-                            <div className="relative pb-[56.25%]">
-                              <img 
-                                src={video.snippet.thumbnails.default.url} 
-                                alt={video.snippet.title}
-                                className="absolute inset-0 w-full h-full object-cover"
-                              />
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
-                              <div className="absolute bottom-0 left-0 p-3">
-                                <h4 className="text-white font-medium text-sm line-clamp-2">
-                                  {video.snippet.title}
-                                </h4>
-                                <p className="text-gray-400 text-xs mt-1">
-                                  {video.snippet.title}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="p-3 flex items-center justify-between text-xs">
-                              <div className="flex items-center gap-4">
-                                {videoStats[video.id.videoId] && (
-                                  <>
-                                    <div className="flex items-center text-gray-400">
-                                      <EyeIcon className="w-3 h-3 mr-1" />
-                                      <span>{abbreviateNumber(parseInt(videoStats[video.id.videoId].viewCount))}</span>
-                                    </div>
-                                    <div className="flex items-center text-gray-400">
-                                      <ThumbsUpIcon className="w-3 h-3 mr-1" />
-                                      <span>{abbreviateNumber(parseInt(videoStats[video.id.videoId].likeCount))}</span>
-                                    </div>
-                                  </>
-                                )}
-                              </div>  
-                              <span className="text-gray-500">
-                                {new Date(video.snippet.publishedAt).toLocaleDateString()}
-                              </span>
-                            </div>
-                          </a>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               )
             )}
           </section>
         </div>
       </main>
-    </div>
+
+      <Features />
+      <Footer />
+
+      <AnimatePresence>
+        {showLoginError && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowLoginError(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-slate-900 border border-white/10 p-8 rounded-[2rem] shadow-2xl overflow-hidden"
+            >
+              {/* Background gradient for the box */}
+              <div className="absolute -top-24 -right-24 w-48 h-48 bg-purple-600/20 blur-[60px] rounded-full"></div>
+              <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-blue-600/20 blur-[60px] rounded-full"></div>
+
+              <div className="relative text-center">
+                <div className="mx-auto w-16 h-16 bg-red-500/10 rounded-2xl flex items-center justify-center mb-6">
+                  <Lock className="h-8 w-8 text-red-500" />
+                </div>
+                <h3 className="text-2xl font-bold text-white mb-2">Access Restricted</h3>
+                <p className="text-gray-400 mb-8 leading-relaxed">
+                  Join the QuickLearn community to unlock deep AI analysis and curated learning paths.
+                </p>
+
+                <div className="space-y-3">
+                  <Link
+                    href="/login"
+                    className="flex items-center justify-center w-full bg-white text-black py-4 rounded-xl font-bold hover:bg-gray-200 transition-all underline decoration-purple-500 underline-offset-4"
+                  >
+                    Take Me to Sign In
+                  </Link>
+                  <button
+                    onClick={() => setShowLoginError(false)}
+                    className="w-full text-gray-500 hover:text-white text-sm py-2 transition-colors"
+                  >
+                    I'll Explore Features First
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div >
   );
 };
-
-const EyeIcon = (props: any) => (
-  <svg
-    {...props}
-    xmlns="http://www.w3.org/2000/svg"
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-    <circle cx="12" cy="12" r="3" />
-  </svg>
-);
-
-const ThumbsUpIcon = (props: any) => (
-  <svg
-    {...props}
-    xmlns="http://www.w3.org/2000/svg"
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M7 10v12" />
-    <path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z" />
-  </svg>
-);
-
-const MessageSquareIcon = (props: any) => (
-  <svg
-    {...props}
-    xmlns="http://www.w3.org/2000/svg"
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-  </svg>
-);
-
-function abbreviateNumber(num: number): string {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1) + 'M';
-  }
-  if (num >= 1000) {
-    return (num / 1000).toFixed(1) + 'K';
-  }
-  return num.toString();
-}

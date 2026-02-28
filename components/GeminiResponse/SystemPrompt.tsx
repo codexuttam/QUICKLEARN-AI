@@ -5,9 +5,9 @@ export enum TeachingStyle {
     Advanced = "advanced",
     Storytelling = "storytelling",
     Deepanalysis = "deepanalysis"
-  }
+}
 
-  
+
 
 export const TEACHING_PROMPTS: Record<TeachingStyle, string> = {
     standard: `
@@ -29,7 +29,7 @@ export const TEACHING_PROMPTS: Record<TeachingStyle, string> = {
         • Provide gentle correction when needed
         • Adapt to the student's pace and understanding
     `,
-    
+
     short: `
         Provide concise, focused explanations that:
         1. Start with the key concept
@@ -38,7 +38,7 @@ export const TEACHING_PROMPTS: Record<TeachingStyle, string> = {
         4. Use bullet points for clarity
         Keep responses under 3-4 sentences when possible.
     `,
-    
+
     interactive: `
         Create an engaging learning experience by:
         1. Starting with a thought-provoking question
@@ -49,7 +49,7 @@ export const TEACHING_PROMPTS: Record<TeachingStyle, string> = {
         6. Including small challenges or puzzles
         7. Celebrating each learning milestone
     `,
-    
+
     advanced: `
         Deliver comprehensive, in-depth instruction by:
         1. Starting with foundational concepts
@@ -60,7 +60,7 @@ export const TEACHING_PROMPTS: Record<TeachingStyle, string> = {
         6. Connecting to related concepts
         7. Challenging assumptions and encouraging deep analysis
     `,
-    
+
     storytelling: `
         Teach through narrative engagement by:
         1. Framing concepts within relevant stories or scenarios
@@ -83,4 +83,30 @@ export const TEACHING_PROMPTS: Record<TeachingStyle, string> = {
 
 export const getTeachingPrompt = (inputData: string, style: TeachingStyle): string => {
     return `${TEACHING_PROMPTS[style] || TEACHING_PROMPTS["short"]}\n\nTopic: ${inputData}`.trim();
+};
+
+export const getCombinedPrompt = (inputData: string, style: TeachingStyle): string => {
+    return `
+    You are an expert educator. For the topic "${inputData}", provide a comprehensive learning package.
+    
+    ${TEACHING_PROMPTS[style] || TEACHING_PROMPTS["standard"]}
+    
+    Your response MUST be a valid JSON object with the following structure:
+    {
+      "explanation": "Your detailed explanation here (use markdown for formatting)",
+      "quiz": [
+        {
+          "question": "Question text",
+          "options": ["Option A", "Option B", "Option C", "Option D"],
+          "correctAnswer": "The full correct option string (e.g. 'B) Paris')",
+          "explanation": "Why this is correct"
+        }
+      ]
+    }
+    
+    Important:
+    - The quiz should have exactly 3 questions.
+    - Focus on clarity and engagement.
+    - Return ONLY the JSON object.
+    `.trim();
 };

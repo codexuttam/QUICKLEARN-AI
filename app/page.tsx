@@ -4,8 +4,8 @@ import { IntegratedGeminiChat } from "@/components/main";
 
 export default function Page() {
   return (
-    <div className="flex min-h-screen overflow-hidden">
-      
+    <div className="flex min-h-screen">
+
       <main className="flex-1 flex flex-col overflow-auto">
         <IntegratedGeminiChat />
       </main>
