@@ -221,12 +221,20 @@ export const IntegratedGeminiChat = () => {
 
       <nav className="sticky top-0 z-50 bg-black/50 backdrop-blur-xl border-b border-white/5">
         <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-          <Link href="/" className="flex items-center space-x-2 group">
-            <Sparkles className="h-6 w-6 text-purple-400 group-hover:rotate-12 transition-transform duration-300" />
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-blue-500 bg-clip-text text-transparent group-hover:opacity-80 transition-opacity">
+          <Link href="/" className="flex items-center space-x-3 group">
+            <div className="relative">
+              <div className="absolute -inset-1 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full blur opacity-25 group-hover:opacity-75 transition duration-500"></div>
+              <img
+                src="/logo.png"
+                alt="QuickLearn Logo"
+                className="relative h-9 w-9 rounded-lg object-cover shadow-2xl transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3"
+              />
+            </div>
+            <h1 className="text-2xl font-black tracking-tighter bg-gradient-to-r from-white via-purple-200 to-blue-400 bg-clip-text text-transparent group-hover:opacity-90 transition-opacity">
               QuickLearn.ai
             </h1>
           </Link>
+
           <div className="flex items-center space-x-6">
             <a href="#features" className="text-gray-400 hover:text-white text-sm transition-all hover:scale-105">Features</a>
             <a href="#about" className="text-gray-400 hover:text-white text-sm transition-all hover:scale-105">About</a>
@@ -358,14 +366,15 @@ export const IntegratedGeminiChat = () => {
                     {response && (
                       <>
                         <div className="flex items-center gap-4 mb-8">
-                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-blue-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
-                            <Sparkles className="h-6 w-6 text-white" />
+                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-blue-600 flex items-center justify-center shadow-lg shadow-purple-500/20 overflow-hidden">
+                            <img src="/logo.png" alt="AI Agent" className="w-full h-full object-cover" />
                           </div>
                           <div>
                             <h3 className="text-2xl font-bold text-white tracking-tight">AI Master Breakdown</h3>
                             <p className="text-sm text-gray-500 font-medium">Personalized Intelligence</p>
                           </div>
                         </div>
+
                         <div className="text-gray-300 leading-relaxed space-y-5 font-light text-lg">
                           {response.split("\n\n").map((paragraph, index) => (
                             <p key={index}>{paragraph}</p>
