@@ -45,9 +45,7 @@ export const IntegratedGeminiChat = () => {
   }
 
   const GEMINI_API_URL = `/api/gemini`;
-  const youtube_api_key = process.env.NEXT_PUBLIC_YOUTUBE_API_KEY;
-  const Youtube_Base_url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&key=${youtube_api_key}`;
-  const youtube_analytics_url = `https://www.googleapis.com/youtube/v3/videos?part=statistics&key=${youtube_api_key}`;
+  const YOUTUBE_API_URL = `/api/youtube`;
 
   const teachingStyleOptions = [
     { value: TeachingStyle.Standard, label: "Standard", description: "Balanced teaching approach" },
@@ -137,32 +135,44 @@ export const IntegratedGeminiChat = () => {
       }
     } catch (error) {
       console.error("Gemini Error:", error);
-      if (axios.isAxiosError(error) && error.response?.status === 429) {
-        setResponse("Gemini AI is reaching its request limit. Please try again in 30 seconds.");
-      } else {
-        setResponse("The AI couldn't generate a breakdown. Please check your Gemini API key.");
+      let errorMessage = "The AI couldn't generate a breakdown. Please check your Gemini API key.";
+
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 429) {
+          errorMessage = error.response.data?.error || "Gemini AI is reaching its request limit. Please try again in 30 seconds.";
+        } else if (error.response?.data?.error) {
+          errorMessage = error.response.data.error;
+        }
       }
+
+      setResponse(errorMessage);
     }
 
+
     try {
-      // 2. Fetch YouTube Videos
-      const youtubeResponse = await axios.get(`${Youtube_Base_url}&q=${encodeURIComponent(inputData)}&maxResults=4`);
-      const youtubeData = youtubeResponse.data as YoutubeVideoResponse;
-      setVideos(youtubeData.items);
+      // 2. Fetch YouTube Videos via server proxy to avoid CORS / key exposure / restrictions
+      const youtubeResponse = await axios.get(`${YOUTUBE_API_URL}?q=${encodeURIComponent(inputData)}&maxResults=4`);
+      const youtubeData = youtubeResponse.data;
 
-      if (youtubeData.items.length > 0) {
-        const videoIds = youtubeData.items.map(video => video.id.videoId).join(',');
-        const statsResponse = await axios.get(`${youtube_analytics_url}&id=${videoIds}`);
-        const statsData = statsResponse.data as YoutubeAnalyticsResponse;
+      const searchItems = youtubeData?.search?.items ?? youtubeData?.items ?? [];
+      setVideos(searchItems);
 
+      if ((youtubeData?.stats?.items ?? []).length > 0) {
+        const statsData = youtubeData.stats;
         const statsMap: Record<string, YoutubeAnalytics['statistics']> = {};
-        statsData.items.forEach(item => {
+        statsData.items.forEach((item: any) => {
           statsMap[item.id] = item.statistics;
         });
         setVideoStats(statsMap);
       }
-    } catch (error) {
-      console.error("YouTube Error:", error);
+    } catch (error: any) {
+      console.error("YouTube Error:", error?.response ?? error);
+      // if proxied endpoint returned a JSON error body from Google, surface a short message to the user
+      if (axios.isAxiosError(error)) {
+        const errBody = error.response?.data;
+        const proxiedMessage = errBody?.error?.message || errBody?.error || JSON.stringify(errBody || {}).slice(0, 300);
+        setResponse((prev) => prev || `YouTube API error: ${proxiedMessage}`);
+      }
       // We don't block the main response if YouTube fails
     } finally {
       setIsLoading(false);
@@ -469,7 +479,7 @@ export const IntegratedGeminiChat = () => {
                             >
                               <div className="relative aspect-video">
                                 <img
-                                  src={video.snippet.thumbnails.high?.url || video.snippet.thumbnails.default.url}
+                                  src={((video.snippet.thumbnails as Record<string, { url?: string }>)?.high?.url ?? (video.snippet.thumbnails as Record<string, { url?: string }>)?.default?.url) || ''}
                                   alt={video.snippet.title}
                                   className="w-full h-full object-cover transition-transform group-hover:scale-105"
                                 />
