@@ -12,7 +12,13 @@ const bricolage = Bricolage_Grotesque({
 export const metadata: Metadata = {
   title: "QuickLearn.ai - Master Any Subject with AI",
   description: "Instant AI-powered explanations, curated learning paths, and interactive quizzes to help you learn anything in minutes.",
+  icons: {
+    icon: '/logo.png',
+    shortcut: '/logo.png',
+    apple: '/logo.png',
+  },
 };
+
 
 
 export default function RootLayout({
