@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, useEffect } from "react";
-import { SendHorizontal, Loader2, BookOpen, Youtube, Sparkles, ChevronDown, ChevronUp, Check, X, ShieldAlert, Lock, LogOut } from "lucide-react";
+import { SendHorizontal, Loader2, BookOpen, Youtube, Sparkles, ChevronDown, ChevronUp, Check, X, ShieldAlert, Lock, LogOut, Menu } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 import axios, { AxiosError } from "axios";
 import { getTeachingPrompt, getCombinedPrompt, TeachingStyle } from '@/components/GeminiResponse/SystemPrompt';
@@ -29,6 +29,7 @@ export const IntegratedGeminiChat = () => {
   const [mounted, setMounted] = useState(false);
   const [showLoginError, setShowLoginError] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -235,7 +236,7 @@ export const IntegratedGeminiChat = () => {
             </h1>
           </Link>
 
-          <div className="flex items-center space-x-6">
+          <div className="hidden md:flex items-center space-x-6">
             <a href="#features" className="text-gray-400 hover:text-white text-sm transition-all hover:scale-105">Features</a>
             <a href="#about" className="text-gray-400 hover:text-white text-sm transition-all hover:scale-105">About</a>
             <div className="h-4 w-px bg-white/10"></div>
@@ -258,7 +259,52 @@ export const IntegratedGeminiChat = () => {
               </button>
             )}
           </div>
+
+          <div className="md:hidden flex items-center">
+            <button
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="text-gray-400 hover:text-white p-2 focus:outline-none"
+            >
+              {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+          </div>
         </div>
+
+        <AnimatePresence>
+          {isMobileMenuOpen && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="md:hidden bg-black/90 backdrop-blur-xl border-t border-white/5 overflow-hidden"
+            >
+              <div className="flex flex-col px-4 py-6 space-y-4">
+                <a href="#features" onClick={() => setIsMobileMenuOpen(false)} className="text-gray-400 hover:text-white text-lg font-medium transition-all">Features</a>
+                <a href="#about" onClick={() => setIsMobileMenuOpen(false)} className="text-gray-400 hover:text-white text-lg font-medium transition-all">About</a>
+                <div className="w-full h-px bg-white/10 my-2"></div>
+                {!isLoggedIn ? (
+                  <div className="flex flex-col space-y-3">
+                    <Link href="/login" onClick={() => setIsMobileMenuOpen(false)} className="text-gray-400 hover:text-white text-lg font-medium transition-colors">Sign In</Link>
+                    <Link href="/signup" onClick={() => setIsMobileMenuOpen(false)} className="bg-white text-black text-center text-lg px-5 py-3 rounded-xl hover:bg-gray-200 transition-all font-bold shadow-[0_0_20px_rgba(255,255,255,0.1)]">Sign Up</Link>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      localStorage.clear();
+                      setIsLoggedIn(false);
+                      setIsMobileMenuOpen(false);
+                      window.location.href = "/";
+                    }}
+                    className="text-white hover:text-red-400 text-lg font-medium transition-all flex items-center justify-center gap-2 bg-white/5 px-4 py-3 rounded-xl hover:bg-white/10 border border-white/5 active:scale-95 text-center mt-2"
+                  >
+                    <LogOut size={20} />
+                    Logout
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </nav>
 
       {/* Elements above have fixed background, now content */}
@@ -321,7 +367,7 @@ export const IntegratedGeminiChat = () => {
                     <div className="relative flex items-center bg-slate-950 rounded-xl overflow-hidden border border-white/5">
                       <input
                         type="text"
-                        className="flex-1 h-16 px-6 py-2 bg-transparent text-white text-lg placeholder-gray-600 outline-none border-0"
+                        className="flex-1 h-14 sm:h-16 px-4 sm:px-6 py-2 bg-transparent text-white text-base sm:text-lg placeholder-gray-600 outline-none border-0 w-full min-w-0"
                         placeholder="What would you like to learn about?"
                         onChange={(e) => setInputData(e.target.value)}
                         value={inputData}
@@ -330,10 +376,10 @@ export const IntegratedGeminiChat = () => {
                       <button
                         type="submit"
                         disabled={isLoading || !inputData.trim()}
-                        className="h-16 px-8 bg-white text-black hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 font-bold"
+                        className="h-14 sm:h-16 px-5 sm:px-8 bg-white text-black hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 font-bold shrink-0"
                       >
                         {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <SendHorizontal size={18} />}
-                        {isLoading ? "Thinking..." : "Deep Search"}
+                        <span className="hidden sm:inline">{isLoading ? "Thinking..." : "Deep Search"}</span>
                       </button>
                     </div>
                   </div>
